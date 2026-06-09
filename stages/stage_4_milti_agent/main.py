@@ -178,15 +178,50 @@ async def check_routing(state: LegalState) -> dict:
     return {"needs_tax": needs_tax, "needs_compliance": needs_compliance}
 
 
-def route_to_specialists(state: LegalState) -> list[Send]:
-    """Routing function: dispatch parallel Send objects to specialist nodes."""
-    sends: list[Send] = []
-    if state.get("needs_tax"):
-        sends.append(Send("call_tax_specialist", state))
-    if state.get("needs_compliance"):
-        sends.append(Send("call_compliance_specialist", state))
+def route_to_specialists(state) -> list[Send]:
+
+    question = state["question"].lower()
+
+    sends = []
+
+    if any(
+        kw in question
+        for kw in ["tax", "irs", "thuế"]
+    ):
+        sends.append(
+            Send("call_tax_specialist", state)
+        )
+
+    if any(
+        kw in question
+        for kw in [
+            "compliance",
+            "sec",
+            "regulation"
+        ]
+    ):
+        sends.append(
+            Send("call_compliance_specialist", state)
+        )
+
+    if any(
+        kw in question
+        for kw in [
+            "data",
+            "privacy",
+            "gdpr",
+            "dữ liệu"
+        ]
+    ):
+        sends.append(
+            Send("call_privacy_specialist", state)
+        )
+
     if not sends:
-        sends.append(Send("aggregate", state))
+        sends.append(
+            Send("aggregate", state)
+        )
+
     return sends
 
 
@@ -234,6 +269,32 @@ async def call_compliance_specialist(state: LegalState) -> dict:
     print(f"  [Node: call_compliance_specialist] Done ({len(final_msg)} chars)")
     return {"compliance_result": final_msg}
 
+async def call_privacy_specialist(state: LegalState) -> dict:
+    print("\n  [Node: call_privacy_specialist] Privacy specialist starting...")
+
+    llm = get_llm()
+
+    messages = [
+        SystemMessage(
+            content=(
+                "You are a GDPR and privacy law expert. "
+                "Analyse privacy, GDPR, personal data protection, "
+                "data breaches, consent requirements, and privacy penalties."
+            )
+        ),
+        HumanMessage(
+            content=(
+                f"Question: {state['question']}\n\n"
+                f"Legal Analysis:\n{state.get('law_analysis', '')}"
+            )
+        ),
+    ]
+
+    result = await llm.ainvoke(messages)
+
+    return {
+        "privacy_result": result.content
+    }
 
 async def aggregate(state: LegalState) -> dict:
     """Combine all specialist analyses into a final comprehensive answer."""
@@ -247,6 +308,10 @@ async def aggregate(state: LegalState) -> dict:
         sections.append(f"## Tax Analysis\n{state['tax_result']}")
     if state.get("compliance_result"):
         sections.append(f"## Regulatory Compliance Analysis\n{state['compliance_result']}")
+    if state.get("privacy_result"):
+        sections.append(
+            f"## Privacy Analysis\n{state['privacy_result']}"
+        )
 
     combined = "\n\n---\n\n".join(sections)
 
@@ -278,6 +343,7 @@ def create_graph():
     graph.add_node("check_routing", check_routing)
     graph.add_node("call_tax_specialist", call_tax_specialist)
     graph.add_node("call_compliance_specialist", call_compliance_specialist)
+    graph.add_node("call_privacy_specialist",call_privacy_specialist)
     graph.add_node("aggregate", aggregate)
 
     graph.set_entry_point("analyze_law")
@@ -290,11 +356,15 @@ def create_graph():
     graph.add_edge("call_tax_specialist", "aggregate")
     graph.add_edge("call_compliance_specialist", "aggregate")
     graph.add_edge("aggregate", END)
+    graph.add_edge("call_privacy_specialist", "aggregate")
 
     return graph.compile()
 
 
-QUESTION = "If a company breaks a contract and avoids taxes, what are the legal and regulatory consequences?"
+QUESTION = (
+    "A company shared customer data without consent "
+    "and violated GDPR. What are the consequences?"
+)
 
 
 async def main():
@@ -323,6 +393,7 @@ async def main():
         "needs_compliance": False,
         "tax_result": "",
         "compliance_result": "",
+        "privacy_result": Annotated[str, _last_wins],
         "final_answer": "",
     })
 
@@ -356,8 +427,16 @@ async def main():
     print("and deploys each agent as an independent A2A service. Run it with:")
     print("  ./start_all.sh && python test_client.py")
     print("=" * 70)
-
-
+    
 if __name__ == "__main__":
     load_dotenv()
+
+    graph = create_graph()
+
+    png_data = graph.get_graph().draw_mermaid_png()
+    with open("stage4_graph.png", "wb") as f:
+        f.write(png_data)
+
+    print("Graph saved to stage4_graph.png")
+
     asyncio.run(main())

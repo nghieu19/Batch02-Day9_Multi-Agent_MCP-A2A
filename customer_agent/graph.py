@@ -32,6 +32,7 @@ legal services platform. Your job is to:
 4. Present the comprehensive response clearly to the user
 
 Always use the `delegate_to_legal_agent` tool for any substantive legal question.
+Call the tool exactly once and return the tool output as your final answer.
 Do not attempt to answer complex legal questions from your own knowledge alone.
 
 Be professional, clear, and make the specialist response accessible to the user.
@@ -50,12 +51,18 @@ def build_graph(trace_id: str, context_id: str, depth: int) -> Any:
         A compiled LangGraph agent.
     """
 
-    @tool
+    @tool(
+        return_direct=True,
+        description=(
+            "Send a legal question to the Law Agent for a final, comprehensive legal analysis. "
+            "Return the Law Agent response as the final answer and do not call this tool more than once."
+        ),
+    )
     async def delegate_to_legal_agent(question: str) -> str:
         """Send a legal question to the Law Agent for comprehensive analysis.
 
-        The Law Agent will coordinate Tax and Compliance sub-agents in parallel
-        and return a synthesised response covering all relevant legal dimensions.
+        The Law Agent coordinates Tax and Compliance sub-agents in parallel
+        and returns a synthesised response for the user.
 
         Args:
             question: The legal question to analyse.
